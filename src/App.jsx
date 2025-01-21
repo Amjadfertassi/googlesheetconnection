@@ -10,72 +10,81 @@ const App = () => {
 
   const CLIENT_ID = '813118908770-1uo8bbufd3lrsajb16guickuk98i9id0.apps.googleusercontent.com';
   const API_KEY = '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';
-  const DISCOVERY_DOCS = ['https://sheets.googleapis.com/$discovery/rest?version=v4'];
   const SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly';
 
   useEffect(() => {
-    const loadGoogleAPI = () => {
+    const loadGoogleSignIn = () => {
       const script = document.createElement('script');
-      script.src = 'https://apis.google.com/js/platform.js';
-      script.onload = initClient;
-      document.body.appendChild(script);
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initializeGoogleSignIn;
+      document.head.appendChild(script);
     };
 
-    loadGoogleAPI();
+    loadGoogleSignIn();
   }, []);
 
-  const initClient = () => {
-    window.gapi.load('client:auth2', async () => {
-      try {
-        await window.gapi.client.init({
-          apiKey: API_KEY,
-          clientId: CLIENT_ID,
-          discoveryDocs: DISCOVERY_DOCS,
-          scope: SCOPES,
-        });
+  const initializeGoogleSignIn = () => {
+    window.google.accounts.id.initialize({
+      client_id: CLIENT_ID,
+      callback: handleCredentialResponse,
+    });
 
-        // Listen for sign-in state changes
-        window.gapi.auth2.getAuthInstance().isSignedIn.listen((isSignedIn) => {
-          updateSignInStatus(isSignedIn);
-        });
-
-        // Handle the initial sign-in state
-        updateSignInStatus(window.gapi.auth2.getAuthInstance().isSignedIn.get());
-      } catch (error) {
-        console.error('Error initializing GAPI client:', error);
-        setError('Failed to initialize Google API client');
-      }
+    window.google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      callback: (tokenResponse) => {
+        if (tokenResponse && tokenResponse.access_token) {
+          setIsSignedIn(true);
+          if (sheetUrl) {
+            handleFetchData(tokenResponse.access_token);
+          }
+        }
+      },
     });
   };
 
-  const updateSignInStatus = (isSignedIn) => {
-    setIsSignedIn(isSignedIn);
-    if (!isSignedIn) {
-      setData([]);
+  const handleCredentialResponse = (response) => {
+    if (response.credential) {
+      setIsSignedIn(true);
     }
   };
 
   const handleSignIn = () => {
-    try {
-      window.gapi.auth2.getAuthInstance().signIn({
-        prompt: 'select_account'
+    if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: (tokenResponse) => {
+          if (tokenResponse && tokenResponse.access_token) {
+            setIsSignedIn(true);
+            if (sheetUrl) {
+              handleFetchData(tokenResponse.access_token);
+            }
+          }
+        },
       });
-    } catch (error) {
-      console.error('Error signing in:', error);
-      setError('Failed to sign in with Google');
+      tokenClient.requestAccessToken();
+    } else {
+      setError('Google Sign-In not initialized');
     }
   };
 
   const handleSignOut = () => {
-    try {
-      window.gapi.auth2.getAuthInstance().signOut();
-    } catch (error) {
-      console.error('Error signing out:', error);
-      setError('Failed to sign out');
+    if (window.google && window.google.accounts) {
+      window.google.accounts.id.disableAutoSelect();
+      setIsSignedIn(false);
+      setData([]);
     }
   };
 
-  const handleFetchData = async () => {
+  const handleFetchData = async (accessToken) => {
+    if (!sheetUrl) {
+      setError('Please enter a Google Sheet URL');
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError('');
@@ -86,12 +95,22 @@ const App = () => {
         return;
       }
 
-      const response = await window.gapi.client.sheets.spreadsheets.values.get({
-        spreadsheetId: sheetId,
-        range: 'Sheet1', // Update this to match your sheet name
-      });
+      const response = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Sheet1?key=${API_KEY}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        }
+      );
 
-      const rows = response.result.values;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const rows = result.values;
+      
       if (rows && rows.length > 0) {
         setData(rows);
       } else {
@@ -137,8 +156,8 @@ const App = () => {
           <>
             <button 
               className="btn btn-primary me-2" 
-              onClick={handleFetchData}
-              disabled={isLoading}
+              onClick={() => handleFetchData()}
+              disabled={isLoading || !sheetUrl}
             >
               {isLoading ? 'Loading...' : 'Fetch Data'}
             </button>
