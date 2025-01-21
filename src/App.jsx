@@ -10,69 +10,65 @@ const App = () => {
 
   const CLIENT_ID = '813118908770-1uo8bbufd3lrsajb16guickuk98i9id0.apps.googleusercontent.com';
   const API_KEY = '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';
-  const SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly';
   const DISCOVERY_DOCS = ['https://sheets.googleapis.com/$discovery/rest?version=v4'];
+  const SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly';
 
   useEffect(() => {
     const loadGoogleAPI = () => {
-      window.gapi.load('client:auth2', initClient);
+      const script = document.createElement('script');
+      script.src = 'https://apis.google.com/js/platform.js';
+      script.onload = initClient;
+      document.body.appendChild(script);
     };
 
-    const script = document.createElement('script');
-    script.src = 'https://apis.google.com/js/api.js';
-    script.async = true;
-    script.defer = true;
-    script.onload = loadGoogleAPI;
-    document.head.appendChild(script);
-
-    return () => {
-      document.head.removeChild(script);
-    };
+    loadGoogleAPI();
   }, []);
 
-  const initClient = async () => {
-    try {
-      await window.gapi.client.init({
-        apiKey: API_KEY,
-        clientId: CLIENT_ID,
-        scope: SCOPES,
-        discoveryDocs: DISCOVERY_DOCS,
-        ux_mode: 'popup',
-        redirect_uri: window.location.origin,
-      });
+  const initClient = () => {
+    window.gapi.load('client:auth2', async () => {
+      try {
+        await window.gapi.client.init({
+          apiKey: API_KEY,
+          clientId: CLIENT_ID,
+          discoveryDocs: DISCOVERY_DOCS,
+          scope: SCOPES,
+        });
 
-      // Initialize the auth2 instance
-      const auth2 = window.gapi.auth2.getAuthInstance();
-      
-      // Update initial sign-in state
-      setIsSignedIn(auth2.isSignedIn.get());
+        // Listen for sign-in state changes
+        window.gapi.auth2.getAuthInstance().isSignedIn.listen((isSignedIn) => {
+          updateSignInStatus(isSignedIn);
+        });
 
-      // Listen for sign-in state changes
-      auth2.isSignedIn.listen((signedIn) => {
-        setIsSignedIn(signedIn);
-        if (!signedIn) {
-          setData([]);
-        }
-      });
-    } catch (error) {
-      console.error('Error initializing GAPI client:', error);
-      setError('Failed to initialize Google API client');
+        // Handle the initial sign-in state
+        updateSignInStatus(window.gapi.auth2.getAuthInstance().isSignedIn.get());
+      } catch (error) {
+        console.error('Error initializing GAPI client:', error);
+        setError('Failed to initialize Google API client');
+      }
+    });
+  };
+
+  const updateSignInStatus = (isSignedIn) => {
+    setIsSignedIn(isSignedIn);
+    if (!isSignedIn) {
+      setData([]);
     }
   };
 
-  const handleSignIn = async () => {
+  const handleSignIn = () => {
     try {
-      await window.gapi.auth2.getAuthInstance().signIn();
+      window.gapi.auth2.getAuthInstance().signIn({
+        prompt: 'select_account'
+      });
     } catch (error) {
       console.error('Error signing in:', error);
       setError('Failed to sign in with Google');
     }
   };
 
-  const handleSignOut = async () => {
+  const handleSignOut = () => {
     try {
-      await window.gapi.auth2.getAuthInstance().signOut();
-      setData([]);
+      window.gapi.auth2.getAuthInstance().signOut();
     } catch (error) {
       console.error('Error signing out:', error);
       setError('Failed to sign out');
@@ -90,11 +86,6 @@ const App = () => {
         return;
       }
 
-      if (!isSignedIn) {
-        await handleSignIn();
-      }
-
-      // Fetch the data
       const response = await window.gapi.client.sheets.spreadsheets.values.get({
         spreadsheetId: sheetId,
         range: 'Sheet1', // Update this to match your sheet name
