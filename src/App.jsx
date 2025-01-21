@@ -7,10 +7,12 @@ const App = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSignedIn, setIsSignedIn] = useState(false);
+  const [userInfo, setUserInfo] = useState(null);
+  const [accessToken, setAccessToken] = useState(null);
 
   const CLIENT_ID = '813118908770-1uo8bbufd3lrsajb16guickuk98i9id0.apps.googleusercontent.com';
   const API_KEY = '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';
-  const SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+  const SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
 
   useEffect(() => {
     const loadGoogleSignIn = () => {
@@ -26,28 +28,30 @@ const App = () => {
   }, []);
 
   const initializeGoogleSignIn = () => {
-    window.google.accounts.id.initialize({
-      client_id: CLIENT_ID,
-      callback: handleCredentialResponse,
-    });
-
     window.google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
       scope: SCOPES,
-      callback: (tokenResponse) => {
-        if (tokenResponse && tokenResponse.access_token) {
-          setIsSignedIn(true);
-          if (sheetUrl) {
-            handleFetchData(tokenResponse.access_token);
-          }
-        }
-      },
+      callback: handleTokenResponse,
     });
   };
 
-  const handleCredentialResponse = (response) => {
-    if (response.credential) {
+  const handleTokenResponse = async (tokenResponse) => {
+    if (tokenResponse && tokenResponse.access_token) {
+      setAccessToken(tokenResponse.access_token);
       setIsSignedIn(true);
+      
+      // Fetch user information
+      try {
+        const userResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: {
+            'Authorization': `Bearer ${tokenResponse.access_token}`
+          }
+        });
+        const userData = await userResponse.json();
+        setUserInfo(userData);
+      } catch (error) {
+        console.error('Error fetching user info:', error);
+      }
     }
   };
 
@@ -56,16 +60,9 @@ const App = () => {
       const tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
-        callback: (tokenResponse) => {
-          if (tokenResponse && tokenResponse.access_token) {
-            setIsSignedIn(true);
-            if (sheetUrl) {
-              handleFetchData(tokenResponse.access_token);
-            }
-          }
-        },
+        callback: handleTokenResponse,
       });
-      tokenClient.requestAccessToken();
+      tokenClient.requestAccessToken({ prompt: 'consent' });
     } else {
       setError('Google Sign-In not initialized');
     }
@@ -73,15 +70,18 @@ const App = () => {
 
   const handleSignOut = () => {
     if (window.google && window.google.accounts) {
-      window.google.accounts.id.disableAutoSelect();
-      setIsSignedIn(false);
-      setData([]);
+      window.google.accounts.oauth2.revoke(accessToken, () => {
+        setIsSignedIn(false);
+        setUserInfo(null);
+        setAccessToken(null);
+        setData([]);
+      });
     }
   };
 
-  const handleFetchData = async (accessToken) => {
-    if (!sheetUrl) {
-      setError('Please enter a Google Sheet URL');
+  const handleFetchData = async () => {
+    if (!sheetUrl || !accessToken) {
+      setError('Please enter a Google Sheet URL and ensure you are signed in');
       return;
     }
 
@@ -133,6 +133,26 @@ const App = () => {
     <div className="container mt-5">
       <h1 className="mb-4">Google Sheet Viewer</h1>
       
+      {userInfo && (
+        <div className="alert alert-info mb-3">
+          <div className="d-flex align-items-center">
+            {userInfo.picture && (
+              <img 
+                src={userInfo.picture} 
+                alt="Profile" 
+                className="rounded-circle me-2" 
+                style={{ width: '40px', height: '40px' }}
+              />
+            )}
+            <div>
+              <strong>{userInfo.name}</strong>
+              <br />
+              <small>{userInfo.email}</small>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-3">
         <input
           type="text"
@@ -156,7 +176,7 @@ const App = () => {
           <>
             <button 
               className="btn btn-primary me-2" 
-              onClick={() => handleFetchData()}
+              onClick={handleFetchData}
               disabled={isLoading || !sheetUrl}
             >
               {isLoading ? 'Loading...' : 'Fetch Data'}
