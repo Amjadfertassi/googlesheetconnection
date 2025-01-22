@@ -8,4 +8,4 @@ export default defineConfig({
     host: true,
     cors: true
   }
-});
+})

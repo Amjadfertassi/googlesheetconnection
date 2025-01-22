@@ -9,6 +9,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sheetData, setSheetData] = useState([]);
   const [errorMessage, setErrorMessage] = useState("");
+  const [sheetId, setSheetId] = useState("");
 
   useEffect(() => {
     const loadClient = () => {
@@ -50,7 +51,7 @@ function App() {
     }
   };
 
-  const fetchSheetData = (sheetId) => {
+  const fetchSheetData = () => {
     if (!sheetId) {
       alert("Please enter a valid Google Sheet ID.");
       return;
@@ -91,8 +92,10 @@ function App() {
           <input
             type="text"
             placeholder="Enter Google Sheet ID"
-            onBlur={(e) => fetchSheetData(e.target.value.trim())}
+            value={sheetId}
+            onChange={(e) => setSheetId(e.target.value.trim())}
           />
+          <button onClick={fetchSheetData}>Import</button>
           {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
           <table border="1">
             <thead>
