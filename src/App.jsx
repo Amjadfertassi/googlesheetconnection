@@ -9,7 +9,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sheetData, setSheetData] = useState([]);
   const [errorMessage, setErrorMessage] = useState("");
-  const [sheetId, setSheetId] = useState("");
+  const [sheetLink, setSheetLink] = useState("");
 
   useEffect(() => {
     const loadClient = () => {
@@ -51,9 +51,15 @@ function App() {
     }
   };
 
+  const extractSheetId = (url) => {
+    const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    return match ? match[1] : "";
+  };
+
   const fetchSheetData = () => {
+    const sheetId = extractSheetId(sheetLink);
     if (!sheetId) {
-      alert("Please enter a valid Google Sheet ID.");
+      alert("Please enter a valid Google Sheet link.");
       return;
     }
 
@@ -91,9 +97,9 @@ function App() {
         <div>
           <input
             type="text"
-            placeholder="Enter Google Sheet ID"
-            value={sheetId}
-            onChange={(e) => setSheetId(e.target.value.trim())}
+            placeholder="Enter Google Sheet Link"
+            value={sheetLink}
+            onChange={(e) => setSheetLink(e.target.value.trim())}
           />
           <button onClick={fetchSheetData}>Import</button>
           {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
