@@ -1,5 +1,4 @@
 import React from 'react';
-import { gapi } from 'gapi-script';
 
 const CLIENT_ID = "813118908770-1uo8bbufd3lrsajb16guickuk98i9id0.apps.googleusercontent.com";
 const API_KEY = "AIzaSyAoG0-AepMg9D4a5xuQl9zPcr42IDwWWrc";
@@ -13,53 +12,66 @@ class App extends React.Component {
       sheetData: [],
       errorMessage: "",
     };
+    this.tokenClient = null;
   }
 
   componentDidMount() {
-    this.loadClient();
+    // Load the Google Identity Services library
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
+
+    script.onload = () => {
+      this.initializeGoogleClient();
+    };
   }
 
-  loadClient = () => {
-    gapi.load('client:auth2:picker', () => {
-      gapi.client
-        .init({
-          apiKey: API_KEY,
-          clientId: CLIENT_ID,
-          discoveryDocs: [
-            "https://sheets.googleapis.com/$discovery/rest?version=v4",
-            "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
-          ],
-          scope: SCOPES,
-        })
-        .then(() => {
-          console.log("Google API client initialized.");
-        })
-        .catch((error) => {
-          console.error("Error initializing Google API client:", error);
-          this.setState({ errorMessage: "Failed to initialize Google API client. Check API Key and Client ID." });
-        });
+  initializeGoogleClient = async () => {
+    try {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: async (response) => {
+          if (response.access_token) {
+            this.setState({ isAuthenticated: true });
+            // Initialize the Google API client after getting the token
+            await this.initializeGapiClient(response.access_token);
+          }
+        },
+      });
+      this.tokenClient = client;
+    } catch (error) {
+      console.error('Error initializing Google client:', error);
+      this.setState({ errorMessage: 'Failed to initialize Google client' });
+    }
+  };
+
+  initializeGapiClient = async (accessToken) => {
+    await gapi.load('client:picker', async () => {
+      await gapi.client.init({
+        apiKey: API_KEY,
+        discoveryDocs: [
+          "https://sheets.googleapis.com/$discovery/rest?version=v4",
+          "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+        ],
+      });
+      gapi.client.setToken({ access_token: accessToken });
+      console.log("Google API client initialized.");
     });
   };
 
   handleAuthClick = () => {
-    const authInstance = gapi.auth2.getAuthInstance();
-    if (authInstance) {
-      authInstance
-        .signIn()
-        .then(() => {
-          this.setState({ isAuthenticated: true });
-        })
-        .catch((error) => {
-          console.error("Authentication failed:", error);
-          this.setState({ errorMessage: "Failed to authenticate with Google." });
-        });
+    if (this.tokenClient) {
+      this.tokenClient.requestAccessToken();
     } else {
-      this.setState({ errorMessage: "Google API client is not initialized yet." });
+      this.setState({ errorMessage: "Authentication client not initialized" });
     }
   };
 
   createPicker = () => {
-    const token = gapi.client.getToken().access_token;
+    const token = gapi.client.getToken()?.access_token;
     if (!token) {
       this.setState({ errorMessage: "Not authenticated. Please sign in first." });
       return;
@@ -98,7 +110,7 @@ class App extends React.Component {
       .then((response) => {
         const data = response.result.values;
         if (data) {
-          this.setState({ sheetData: data });
+          this.setState({ sheetData: data, errorMessage: "" });
         } else {
           this.setState({ errorMessage: "No data found in the sheet." });
         }
