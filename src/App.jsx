@@ -3,7 +3,7 @@ import { gapi } from 'gapi-script';
 
 const CLIENT_ID = "813118908770-1uo8bbufd3lrsajb16guickuk98i9id0.apps.googleusercontent.com";
 const API_KEY = "AIzaSyAoG0-AepMg9D4a5xuQl9zPcr42IDwWWrc";
-const SCOPES = "https://www.googleapis.com/auth/spreadsheets.readonly";
+const SCOPES = "https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.readonly";
 
 class App extends React.Component {
   constructor(props) {
@@ -12,7 +12,6 @@ class App extends React.Component {
       isAuthenticated: false,
       sheetData: [],
       errorMessage: "",
-      sheetLink: ""
     };
   }
 
@@ -21,12 +20,15 @@ class App extends React.Component {
   }
 
   loadClient = () => {
-    gapi.load('client:auth2', () => {
+    gapi.load('client:auth2:picker', () => {
       gapi.client
         .init({
           apiKey: API_KEY,
           clientId: CLIENT_ID,
-          discoveryDocs: ["https://sheets.googleapis.com/$discovery/rest?version=v4"],
+          discoveryDocs: [
+            "https://sheets.googleapis.com/$discovery/rest?version=v4",
+            "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+          ],
           scope: SCOPES,
         })
         .then(() => {
@@ -56,20 +58,34 @@ class App extends React.Component {
     }
   };
 
-  extractSheetId = (url) => {
-    const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    return match ? match[1] : "";
-  };
-
-  fetchSheetData = () => {
-    const sheetId = this.extractSheetId(this.state.sheetLink);
-    if (!sheetId) {
-      alert("Please enter a valid Google Sheet link.");
+  createPicker = () => {
+    const token = gapi.client.getToken().access_token;
+    if (!token) {
+      this.setState({ errorMessage: "Not authenticated. Please sign in first." });
       return;
     }
 
+    const view = new google.picker.View(google.picker.ViewId.SPREADSHEETS);
+    const picker = new google.picker.PickerBuilder()
+      .enableFeature(google.picker.Feature.NAV_HIDDEN)
+      .setAppId(CLIENT_ID.split('-')[0])
+      .setOAuthToken(token)
+      .addView(view)
+      .setCallback(this.pickerCallback)
+      .build();
+    picker.setVisible(true);
+  };
+
+  pickerCallback = (data) => {
+    if (data.action === google.picker.Action.PICKED) {
+      const fileId = data[google.picker.Response.DOCUMENTS][0].id;
+      this.fetchSheetData(fileId);
+    }
+  };
+
+  fetchSheetData = (sheetId) => {
     if (!gapi.client.sheets) {
-      alert("Google Sheets API client is not initialized. Try again later.");
+      this.setState({ errorMessage: "Google Sheets API client is not initialized. Try again later." });
       return;
     }
 
@@ -84,57 +100,49 @@ class App extends React.Component {
         if (data) {
           this.setState({ sheetData: data });
         } else {
-          alert("No data found in the sheet.");
+          this.setState({ errorMessage: "No data found in the sheet." });
         }
       })
       .catch((error) => {
         console.error("Error fetching data:", error);
-        this.setState({ errorMessage: "Failed to fetch data. Ensure the Sheet ID and permissions are correct." });
+        this.setState({ errorMessage: "Failed to fetch data. Ensure you have permission to access this spreadsheet." });
       });
   };
 
-  handleSheetLinkChange = (e) => {
-    this.setState({ sheetLink: e.target.value.trim() });
-  };
-
   render() {
-    const { isAuthenticated, sheetLink, errorMessage, sheetData } = this.state;
+    const { isAuthenticated, errorMessage, sheetData } = this.state;
 
     return (
       <div className="App">
-        <h1>Google me Sheets Viewer</h1>
+        <h1>Google Sheets Viewer</h1>
         {!isAuthenticated ? (
           <button onClick={this.handleAuthClick}>Connect with Google</button>
         ) : (
           <div>
-            <input
-              type="text"
-              placeholder="Enter Google Sheet Link"
-              value={sheetLink}
-              onChange={this.handleSheetLinkChange}
-            />
-            <button onClick={this.fetchSheetData}>Import</button>
+            <button onClick={this.createPicker}>Select Spreadsheet</button>
             {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
-            <table border="1">
-              <thead>
-                {sheetData[0] && (
-                  <tr>
-                    {sheetData[0].map((header, index) => (
-                      <th key={index}>{header}</th>
-                    ))}
-                  </tr>
-                )}
-              </thead>
-              <tbody>
-                {sheetData.slice(1).map((row, rowIndex) => (
-                  <tr key={rowIndex}>
-                    {row.map((cell, cellIndex) => (
-                      <td key={cellIndex}>{cell}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {sheetData.length > 0 && (
+              <table border="1">
+                <thead>
+                  {sheetData[0] && (
+                    <tr>
+                      {sheetData[0].map((header, index) => (
+                        <th key={index}>{header}</th>
+                      ))}
+                    </tr>
+                  )}
+                </thead>
+                <tbody>
+                  {sheetData.slice(1).map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                      {row.map((cell, cellIndex) => (
+                        <td key={cellIndex}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </div>
