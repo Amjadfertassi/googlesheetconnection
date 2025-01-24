@@ -1,4 +1,5 @@
 import React from 'react';
+import './App.css';
 
 const CLIENT_ID = "813118908770-1uo8bbufd3lrsajb16guickuk98i9id0.apps.googleusercontent.com";
 const API_KEY = "AIzaSyAoG0-AepMg9D4a5xuQl9zPcr42IDwWWrc";
